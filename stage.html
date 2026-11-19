@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сцена Пітч-дня</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&family=Rubik:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/avatars.css">
+  <link rel="stylesheet" href="css/stage.css">
+</head>
+<body>
+  <div id="viewport">
+    <div id="stage" class="mode-gallery">
+      <!-- декорації -->
+      <div class="bg"></div>
+      <div class="spot"></div>
+      <div class="spot-pool"></div>
+      <div class="floor"></div>
+      <div class="curtain left"></div>
+      <div class="curtain right"></div>
+      <div class="valance"></div>
+
+      <!-- ===== РЕЖИМ «СЦЕНА» ===== -->
+      <section id="scene" class="screen">
+        <div id="passport">
+          <div class="passport-title">📘 Паспорт винахідника</div>
+          <div id="stamps" class="stamps"></div>
+        </div>
+
+        <div id="timer" class="timer idle">
+          <svg viewBox="0 0 160 160" aria-hidden="true">
+            <circle class="ring-bg" cx="80" cy="80" r="68"></circle>
+            <circle id="ring" class="ring" cx="80" cy="80" r="68"></circle>
+          </svg>
+          <div id="timer-text" class="timer-text">60</div>
+        </div>
+        <div id="finish-pill">Час фінішувати 🏁</div>
+
+        <aside id="cheat">
+          <div class="cheat-title">Шпаргалка</div>
+          <div id="cheat-list"></div>
+        </aside>
+
+        <div id="banner">
+          <div id="speaker-name"></div>
+          <div id="invention"></div>
+        </div>
+
+        <div id="speaker-slot"></div>
+        <div id="empty-stage">🎤 Скоро на сцені — наш винахідник!</div>
+
+        <div id="forgot-cloud">
+          <div class="cloud">Що далі?..</div>
+          <span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span>
+        </div>
+        <div id="hint-chip"></div>
+      </section>
+
+      <!-- ===== РЕЖИМ «ГАЛЕРЕЯ АВАТАРІВ» ===== -->
+      <section id="gallery" class="screen">
+        <div class="g-head">
+          <h1>Обери свого винахідника!</h1>
+          <p>Скажи: <b>«Персонаж 3, зелений, сова»</b></p>
+        </div>
+        <div class="g-body">
+          <div class="g-options">
+            <div class="g-label">Персонаж</div>
+            <div id="g-chars" class="g-row"></div>
+            <div class="g-label">Колір одягу</div>
+            <div id="g-colors" class="g-row"></div>
+            <div class="g-label">Помічник</div>
+            <div id="g-pets" class="g-row"></div>
+          </div>
+          <div class="g-preview">
+            <div class="g-preview-title">Твій аватар</div>
+            <div id="g-preview-slot"></div>
+            <div id="g-preview-caption"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== РЕЖИМ «ФІНАЛ» ===== -->
+      <section id="final" class="screen">
+        <h1 class="final-title">🎉 Наші винахідники! 🎉</h1>
+        <div id="final-grid"></div>
+      </section>
+
+      <!-- журі -->
+      <div id="jury"></div>
+
+      <!-- ефекти -->
+      <div id="fx-layer"></div>
+      <canvas id="confetti" width="1280" height="720"></canvas>
+      <div id="freeze-overlay"></div>
+    </div>
+  </div>
+
+  <!-- один клік, щоб браузер дозволив звук -->
+  <div id="start-overlay">
+    <button id="start-btn" type="button">
+      <span class="big">▶</span>
+      <span>Відкрити сцену</span>
+      <small>Клацніть один раз — так браузер дозволить звук.<br>Потім демонструйте цю вкладку в Meet з увімкненим «Поділитися аудіо вкладки».</small>
+    </button>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/avatars.js"></script>
+  <script src="js/sound.js"></script>
+  <script src="js/stage.js"></script>
+</body>
+</html>
