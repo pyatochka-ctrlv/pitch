@@ -22,7 +22,7 @@ PD.Avatars = (function () {
     var h = ch.hair;
     switch (i) {
       case 1: // кепка: козирок стирчить позаду
-        return '<ellipse cx="104" cy="52" rx="56" ry="11" transform="rotate(-7 104 52)" fill="#b02a33"/>';
+        return '<ellipse cx="110" cy="55" rx="23" ry="4.5" transform="rotate(-6 110 55)" fill="#b02a33"/>';
       case 2: // два хвостики
         return '<circle cx="44" cy="82" r="19" fill="' + h + '"/><circle cx="38" cy="106" r="13" fill="' + h + '"/>' +
                '<circle cx="156" cy="82" r="19" fill="' + h + '"/><circle cx="162" cy="106" r="13" fill="' + h + '"/>';

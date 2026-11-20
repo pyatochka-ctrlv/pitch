@@ -2,25 +2,37 @@
    ПУЛЬТ: тут живе весь стан уроку.
    Повний стан (імена, чекліст, нотатки) зберігається в localStorage
    під ключем pitchday-pult. На сцену йде лише «вид» без оцінок.
+   Дві вкладки: «Підготовка» і «Пітч».
    ========================================================= */
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var STAMP_KEYS = PD.STAMPS.map(function (s) { return s.key; });
+  var VERSION = 2;
 
   function freshTimer(duration) {
     return { duration: duration || 60, running: false, startedAt: 0, accumulated: 0 };
   }
+  function blankStamps() {
+    var o = {};
+    PD.STAMPS.forEach(function (s) { o[s.key] = false; });
+    return o;
+  }
   function defaults() {
     return {
-      speakers: [], selectedId: null, stageId: null,
-      mode: 'gallery', showName: false, showCheat: true,
+      v: VERSION, tab: 'prep',
+      speakers: [], selectedId: null, openId: null, stageId: null,
+      mode: 'gallery', showName: false, showCheat: false,
       timer: freshTimer(60), volume: 0.7, muted: false
     };
   }
 
   var st = PD.Sync.load(PD.KEY_PULT, null) || defaults();
+  if (st.v !== VERSION) { st.showCheat = false; st.v = VERSION; }   // нова версія: шпаргалка за замовчуванням вимкнена
   st = Object.assign(defaults(), st);
   st.timer = Object.assign(freshTimer(60), st.timer || {});
+  if (PD.DURATIONS.indexOf(st.timer.duration) < 0 && !st.timer.running) st.timer = freshTimer(60);
+
+  // тимчасовий стан інтерфейсу (не зберігається)
+  var ui = { menuId: null, confirmDelId: null, resetAsk: false };
 
   /* ---------- утиліти ---------- */
   function esc(s) {
@@ -29,11 +41,12 @@
     });
   }
   function byId(id) { return st.speakers.filter(function (s) { return s.id === id; })[0] || null; }
+  function indexOf(id) { return st.speakers.findIndex(function (s) { return s.id === id; }); }
   function selected() { return byId(st.selectedId); }
   function onStage() { return byId(st.stageId); }
   function elapsedMs() { var t = st.timer; return t.accumulated + (t.running ? Date.now() - t.startedAt : 0); }
   function fmt(sec) {
-    sec = Math.max(0, Math.round(sec));
+    sec = Math.max(0, Math.ceil(sec));
     return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
   }
   var toastT;
@@ -44,8 +57,8 @@
     clearTimeout(toastT);
     toastT = setTimeout(function () { t.classList.remove('show'); }, 2600);
   }
-  function lastAction(text) { $('last-action').textContent = text; }
   function fired(btn) { if (!btn) return; btn.classList.remove('fired'); void btn.offsetWidth; btn.classList.add('fired'); }
+  function closest(el, sel) { return el && el.closest ? el.closest(sel) : null; }
 
   /* ---------- збереження і публікація ---------- */
   function avatarOf(s) { return s ? { char: s.char, color: s.color, pet: s.pet } : null; }
@@ -62,11 +75,11 @@
       stage: sp ? {
         id: sp.id, char: sp.char, color: sp.color, pet: sp.pet,
         invention: sp.invention || '',
-        name: st.showName ? sp.name : '',
+        name: st.showName ? PD.cap(sp.name) : '',
         stamps: Object.assign({}, sp.stamps)
       } : null,
       all: st.speakers.map(function (s) {
-        return { id: s.id, char: s.char, color: s.color, pet: s.pet, invention: s.invention || '', name: st.showName ? s.name : '' };
+        return { id: s.id, char: s.char, color: s.color, pet: s.pet, invention: s.invention || '', name: st.showName ? PD.cap(s.name) : '' };
       })
     };
   }
@@ -79,37 +92,37 @@
     if (!noRender) render();
   }
 
-  function fx(kind, data, label, btn) {
+  function fx(kind, data, btn) {
     PD.Sync.send('fx', Object.assign({ kind: kind }, data || {}));
-    if (label) lastAction(label);
     fired(btn);
+    if (st.mode !== 'stage' && ['question', 'applause', 'star'].indexOf(kind) >= 0) {
+      toast('Ефекти видно лише в режимі «Сцена» — увімкніть його в «Підготовці»');
+    }
   }
 
-  /* ---------- спікери ---------- */
+  /* ---------- діти ---------- */
   function addSpeaker(name) {
-    name = (name || '').trim();
+    name = PD.cap(name);
     if (!name) return;
     var n = st.speakers.length;
     var s = {
       id: PD.uid(), name: name,
       char: n % 6, color: (n * 3 + 5) % 8, pet: n % 6,
-      invention: '', stamps: {}, checks: [false, false, false, false, false, false],
+      invention: '', stamps: blankStamps(), checks: [false, false, false, false, false, false],
       duration: null, note: ''
     };
-    STAMP_KEYS.forEach(function (k) { s.stamps[k] = false; });
     st.speakers.push(s);
     st.selectedId = s.id;
+    st.openId = s.id;           // одразу розгортаємо конструктор
     commit();
-    lastAction('➕ Додано: ' + name);
   }
 
   function removeSpeaker(id) {
-    var s = byId(id);
-    if (!s) return;
-    if (!confirm('Видалити «' + s.name + '» зі списку? Позначки чекліста теж зникнуть.')) return;
     st.speakers = st.speakers.filter(function (x) { return x.id !== id; });
     if (st.selectedId === id) st.selectedId = st.speakers[0] ? st.speakers[0].id : null;
-    if (st.stageId === id) st.stageId = null;
+    if (st.openId === id) st.openId = null;
+    if (st.stageId === id) { st.stageId = null; st.timer = freshTimer(st.timer.duration); }
+    ui.menuId = ui.confirmDelId = null;
     commit();
   }
 
@@ -121,50 +134,49 @@
     if (sec >= 30 && sec <= 65) sp.checks[0] = true;
   }
 
-  function resetTimer() {
-    st.timer = freshTimer(st.timer.duration);
-  }
+  function resetTimer() { st.timer = freshTimer(st.timer.duration); }
 
   function putOnStage(id) {
     var s = byId(id);
-    if (!s) { toast('Спочатку додайте дитину і виберіть її у списку'); return; }
+    if (!s) return;
     var same = st.stageId === id;
-    if (!same) {
-      recordDuration();
-      resetTimer();
-    }
+    if (!same) { recordDuration(); resetTimer(); }
     st.stageId = id;
     st.selectedId = id;
     st.mode = 'stage';
     commit();
     if (same) fx('enter');
-    lastAction('🎤 На сцені: ' + s.name);
+  }
+
+  function isLast() {
+    var i = indexOf(st.stageId);
+    return i >= 0 && i === st.speakers.length - 1;
   }
 
   function nextSpeaker() {
-    if (!st.speakers.length) { toast('Список дітей порожній'); return; }
-    var idx = st.speakers.findIndex(function (s) { return s.id === st.stageId; });
-    if (idx < 0) idx = st.speakers.findIndex(function (s) { return s.id === st.selectedId; }) - 1;
-    var next = st.speakers[idx + 1];
-    if (!next) {
+    if (!st.speakers.length) { toast('Спочатку додайте дітей у вкладці «Підготовка»'); return; }
+    if (isLast()) {
+      // остання дитина → фінал
       recordDuration();
-      if (st.timer.running) { st.timer.accumulated = elapsedMs(); st.timer.running = false; }
+      resetTimer();
+      st.mode = 'final';
       commit();
-      toast('Це була остання дитина. Час для фіналу? 🎉');
+      toast('🎉 Фінал! Усі винахідники на сцені');
       return;
     }
-    putOnStage(next.id);
+    var i = indexOf(st.stageId);
+    putOnStage(st.speakers[i + 1].id);
   }
 
   /* ---------- таймер ---------- */
   function startTimer() {
     var t = st.timer;
     if (t.running) return;
+    if (!onStage()) toast('Підказка: виведіть дитину на сцену кнопкою «Наступний ▶»');
     t.startedAt = Date.now();
     t.running = true;
     if (st.mode !== 'stage' && onStage()) st.mode = 'stage';
     commit();
-    lastAction('▶️ Таймер ' + t.duration + ' с');
   }
   function pauseTimer() {
     var t = st.timer;
@@ -173,21 +185,23 @@
     t.running = false;
     recordDuration();
     commit();
-    lastAction('⏸️ Пауза');
   }
   function resetTimerBtn() {
     if (elapsedMs() >= 1000) recordDuration();
     resetTimer();
     commit();
-    lastAction('🔄 Таймер скинуто');
   }
   function setDuration(d) {
-    st.timer.duration = d;
+    if (st.timer.running) {
+      st.timer.duration = d;       // під час виступу просто міняємо ліміт
+    } else {
+      if (elapsedMs() >= 1000) recordDuration();
+      st.timer = freshTimer(d);    // не запущено — показуємо нову тривалість з нуля
+    }
     commit();
-    lastAction('⏱️ Тривалість: ' + d + ' с');
   }
 
-  /* ---------- виклики ---------- */
+  /* ---------- питання журі ---------- */
   var lastQ = -1;
   function randomQuestion() {
     var i;
@@ -195,172 +209,193 @@
     lastQ = i;
     return PD.QUESTIONS[i];
   }
-  var LABELS = {
-    interrupt: '✋ «А можна я скажу?!»', what: '❓ «Що-що? Не почули!»', louder: '🔊 «Голосніше, будь ласка!»',
-    giggle: '😄 Смішок', laughwave: '😂 Хвиля сміху', phone: '📞 Телефонний дзвінок', freeze: '🧊 Зависання',
-    forgot: '😶 Забув слово', applause: '👏 Оплески', star: '🌟 Незбивний момент!', clear: '🧽 Прибрано'
-  };
-  function runFx(kind, btn) {
-    if (kind === 'question') {
-      var q = randomQuestion();
-      fx('question', { text: q }, '🙋 «' + q + '»', btn);
-    } else {
-      fx(kind, null, LABELS[kind] || kind, btn);
-    }
-  }
-  function randomFrom(block, btn) {
-    var list = block === 'word' ? PD.WORD_CHALLENGES : PD.STRONG_CHALLENGES;
-    var c = list[Math.floor(Math.random() * list.length)];
-    runFx(c.key, null);
-    fired(btn);
-    $('last-action').textContent = '🎲 ' + $('last-action').textContent;
-  }
 
-  /* ---------- побудова інтерфейсу ---------- */
+  /* ---------- побудова статичних частин ---------- */
   function buildStatic() {
-    // питання
     $('q-list').innerHTML = PD.QUESTIONS.map(function (q, i) {
       return '<button class="q-btn" type="button" data-q="' + i + '">🙋 ' + esc(q) + '</button>';
     }).join('');
-    // підказки
-    $('hints').innerHTML = PD.HINTS.map(function (k) {
-      var t = PD.TECHNIQUES.filter(function (x) { return x.key === k; })[0];
-      return '<button class="btn yellow" type="button" data-hint="' + k + '"><span class="e">' + t.emoji + '</span>' + t.title + '</button>';
+    $('durations').innerHTML = PD.DURATIONS.map(function (d) {
+      return '<button class="btn" type="button" data-d="' + d + '">' + d + ' с</button>';
     }).join('');
-    // печатки
-    $('stamp-btns').innerHTML = PD.STAMPS.map(function (s) {
-      return '<button class="btn stamp-btn" type="button" data-stamp="' + s.key + '" style="--ink:' + s.ink + '">' +
-        '<span class="e">' + s.emoji + '</span>' + s.label + '<span class="st">вимкнено</span></button>';
-    }).join('');
-    // чекліст
     $('checklist').innerHTML = PD.CHECKLIST.map(function (c, i) {
-      return '<label class="check" data-i="' + i + '"><input type="checkbox" data-check="' + i + '"><span class="cn">' + (i + 1) + '</span><span>' + esc(c) + '</span></label>';
-    }).join('');
-    // кольори і тваринки (не залежать від кольору одягу)
-    $('pick-color').innerHTML = PD.COLORS.map(function (c, i) {
-      return '<button class="pick" type="button" data-color="' + i + '" title="' + c.name + '"><span class="sw" style="background:' + c.hex + '"></span><span class="n">' + c.n + '</span><span class="lbl">' + c.name + '</span></button>';
-    }).join('');
-    $('pick-pet').innerHTML = PD.PETS.map(function (p, i) {
-      return '<button class="pick" type="button" data-pet="' + i + '" title="' + p.name + '"><span class="n">' + p.n + '</span>' +
-        (p.key === 'none' ? noPetMini() : PD.Avatars.pet(i)) + '<span class="lbl">' + p.name + '</span></button>';
+      return '<label class="check"><input type="checkbox" data-check="' + i + '"><span class="cn">' + (i + 1) + '</span><span>' + esc(c) + '</span></label>';
     }).join('');
   }
 
-  function noPetMini() {
-    return '<svg viewBox="0 0 120 120" class="av-pet"><circle cx="60" cy="60" r="38" fill="none" stroke="#b9b0d8" stroke-width="7" stroke-dasharray="10 9"/><path d="M36 84 L84 36" stroke="#b9b0d8" stroke-width="7" stroke-linecap="round"/></svg>';
+  /* ---------- рендер: підготовка ---------- */
+  function editorHtml(s) {
+    var chars = PD.CHARACTERS.map(function (c, i) {
+      return '<button class="pick' + (s.char === i ? ' sel' : '') + '" type="button" data-char="' + i + '" title="' + esc(c.title) + '">' +
+        '<span class="n">' + c.n + '</span>' + PD.Avatars.character(i, s.color) + '</button>';
+    }).join('');
+    var colors = PD.COLORS.map(function (c, i) {
+      return '<button class="pick' + (s.color === i ? ' sel' : '') + '" type="button" data-color="' + i + '">' +
+        '<span class="n">' + c.n + '</span><span class="sw" style="background:' + c.hex + '"></span><span class="lbl">' + c.name + '</span></button>';
+    }).join('');
+    var pets = PD.PETS.map(function (p, i) {
+      var pic = p.key === 'none'
+        ? '<svg viewBox="0 0 120 120" class="av-pet"><circle cx="60" cy="60" r="38" fill="none" stroke="#b9b0d8" stroke-width="7" stroke-dasharray="10 9"/><path d="M36 84 L84 36" stroke="#b9b0d8" stroke-width="7" stroke-linecap="round"/></svg>'
+        : PD.Avatars.pet(i);
+      return '<button class="pick' + (s.pet === i ? ' sel' : '') + '" type="button" data-pet="' + i + '">' +
+        '<span class="n">' + p.n + '</span>' + pic + '<span class="lbl">' + p.name + '</span></button>';
+    }).join('');
+    var stamps = PD.STAMPS.map(function (d) {
+      return '<button class="stamp-pick' + (s.stamps[d.key] ? ' on' : '') + '" type="button" data-stamp-pick="' + d.key + '" style="--ink:' + d.ink + '">' +
+        d.emoji + ' ' + d.label + '</button>';
+    }).join('');
+    return '<div class="kid-editor">' +
+      '<div class="ed-label">Персонаж</div><div class="pick-row chars">' + chars + '</div>' +
+      '<div class="ed-label">Колір одягу</div><div class="pick-row colors">' + colors + '</div>' +
+      '<div class="ed-label">Тваринка-помічник</div><div class="pick-row pets">' + pets + '</div>' +
+      '<div class="ed-label">Винахід <small>(вставте текст із генератора)</small></div>' +
+      '<textarea id="invention" rows="2" maxlength="120" placeholder="Напр.: Парасолька, що співає, коли починається дощ">' + esc(s.invention) + '</textarea>' +
+      '<div class="ed-label">Печатки паспорта <small>(за тренування на слайдах)</small></div><div class="stamp-picks">' + stamps + '</div>' +
+      '<div class="ed-actions">' +
+        '<button class="btn-inline green" type="button" data-done>✅ Готово</button>' +
+        '<button class="btn-inline" type="button" data-to-stage>🎤 На сцену</button>' +
+      '</div></div>';
   }
 
-  var charColorDrawn = -1;
-  function render() {
-    var sel = selected(), sp = onStage();
+  function menuHtml(s) {
+    if (ui.menuId !== s.id) return '';
+    if (ui.confirmDelId === s.id) {
+      return '<div class="menu"><p>Видалити <b>' + esc(s.name) + '</b>? Аватар, позначки й нотатка теж зникнуть.</p>' +
+        '<div class="acts"><button class="btn-inline red" type="button" data-del-yes>Так, видалити</button>' +
+        '<button class="btn-inline ghost" type="button" data-del-no>Скасувати</button></div></div>';
+    }
+    return '<div class="menu"><button class="item" type="button" data-del-ask>🗑️ Видалити дитину</button></div>';
+  }
 
-    // список дітей
-    var list = $('speaker-list');
+  function renderKids() {
+    var list = $('kid-list');
     if (!st.speakers.length) {
-      list.innerHTML = '<div class="empty">Додайте дітей — імена видно лише на пульті. Тоді оберіть аватар у галереї.</div>';
-    } else {
-      list.innerHTML = st.speakers.map(function (s, i) {
-        var done = s.duration ? '<span class="done" title="виступ(-ила)">✅</span>' : '';
-        return '<div class="chip' + (s.id === st.selectedId ? ' sel' : '') + '" data-sid="' + s.id + '">' +
+      list.innerHTML = '<div class="empty">Додайте дітей — імена видно лише на пульті. Потім увімкніть «Галерея аватарів» і зберіть аватар для кожної дитини.</div>';
+      return;
+    }
+    list.innerHTML = st.speakers.map(function (s, i) {
+      var open = st.openId === s.id;
+      var badges = (s.id === st.stageId ? '🎤 на сцені ' : '') + (s.duration != null ? '✅ ' + s.duration + ' с' : '');
+      return '<div class="kid' + (open ? ' open' : '') + (s.id === st.selectedId ? ' sel' : '') + '" data-sid="' + s.id + '">' +
+        '<div class="kid-head" data-toggle>' +
+          '<span class="kid-num">' + (i + 1) + '</span>' +
           '<span class="mini">' + PD.Avatars.character(s.char, s.color) + '</span>' +
-          '<span class="nm">' + (i + 1) + '. ' + esc(s.name) + '</span>' +
-          (s.id === st.stageId ? '<span class="live-mark" title="на сцені">🎤</span>' : '') + done +
-          '<button class="del" type="button" data-del="' + s.id + '" title="Видалити">✖</button></div>';
-      }).join('');
-    }
+          '<div class="kid-info"><b>' + esc(s.name) + '</b><small class="kid-inv">' + (s.invention ? '💡 ' + esc(s.invention) : 'винахід ще не вписано') + '</small></div>' +
+          '<span class="kid-badges">' + badges + '</span>' +
+          '<button class="kid-edit" type="button">' + (open ? '▲ Згорнути' : '✏️ Аватар') + '</button>' +
+          '<div class="menu-wrap"><button class="dots" type="button" data-menu title="Дії">⋯</button>' + menuHtml(s) + '</div>' +
+        '</div>' +
+        (open ? editorHtml(s) : '') +
+      '</div>';
+    }).join('');
+  }
 
-    // конструктор
-    $('editor').classList.toggle('disabled', !sel);
-    $('ed-name').textContent = sel ? sel.name : '—';
-    var color = sel ? sel.color : 0;
-    if (charColorDrawn !== color) {
-      $('pick-char').innerHTML = PD.CHARACTERS.map(function (c, i) {
-        return '<button class="pick" type="button" data-char="' + i + '" title="' + c.title + '"><span class="n">' + c.n + '</span>' + PD.Avatars.character(i, color) + '</button>';
-      }).join('');
-      charColorDrawn = color;
+  // «Почати новий урок» — дві кнопки (у «Підсумку» і внизу), підтвердження на сторінці
+  function resetHtml(zone) {
+    if (ui.resetAsk === zone) {
+      return '<div class="reset-confirm"><p>Очистити список дітей, аватари, чекліст і нотатки? Скасувати це не можна — спершу скопіюйте підсумок.</p>' +
+        '<button class="btn-inline red" type="button" data-reset-yes>🧹 Так, почати новий урок</button>' +
+        '<button class="btn-inline ghost" type="button" data-reset-no>Скасувати</button></div>';
     }
-    markSel('#pick-char .pick', 'char', sel && sel.char);
-    markSel('#pick-color .pick', 'color', sel && sel.color);
-    markSel('#pick-pet .pick', 'pet', sel && sel.pet);
-    var inv = $('invention');
-    if (document.activeElement !== inv) inv.value = sel ? sel.invention || '' : '';
+    if (zone === 'top') {
+      return '<button class="btn wide new-lesson" type="button" data-reset-ask><span class="e">🧹</span>Новий урок</button>';
+    }
+    return '<div class="reset-row"><p>Після уроку скопіюйте підсумок, а потім очистіть пульт для нової групи.</p>' +
+      '<button class="reset-btn" type="button" data-reset-ask>🧹 Почати новий урок</button></div>';
+  }
+  function renderReset() {
+    $('reset-zone-top').innerHTML = resetHtml('top');
+    $('reset-zone').innerHTML = resetHtml('bottom');
+  }
 
-    // режими
+  function renderPrep() {
+    renderKids();
     var modes = document.querySelectorAll('#modes .btn');
     for (var i = 0; i < modes.length; i++) modes[i].classList.toggle('sel', modes[i].getAttribute('data-mode') === st.mode);
     $('show-name').checked = st.showName;
     $('show-cheat').checked = st.showCheat;
-
-    // тривалості
-    var durs = document.querySelectorAll('#durations .btn');
-    for (var j = 0; j < durs.length; j++) durs[j].classList.toggle('sel', +durs[j].getAttribute('data-d') === st.timer.duration);
-
-    // гучність
     $('volume').value = Math.round(st.volume * 100);
     $('vol-val').textContent = Math.round(st.volume * 100) + '%';
-    $('mute').textContent = st.muted ? '🔈 Увімкнути звук' : '🔇 Тиша';
+    $('mute').innerHTML = st.muted ? '<span class="e">🔈</span>Увімкнути звук' : '<span class="e">🔇</span>Тиша';
     $('mute').classList.toggle('on', st.muted);
+    renderReset();
+  }
 
-    // печатки — для того, хто на сцені
-    $('stamps-for').textContent = sp ? sp.name : 'спочатку виведіть дитину на сцену';
-    var sb = document.querySelectorAll('#stamp-btns .btn');
-    for (var k = 0; k < sb.length; k++) {
-      var key = sb[k].getAttribute('data-stamp');
-      var on = !!(sp && sp.stamps[key]);
-      sb[k].classList.toggle('on', on);
-      sb[k].disabled = !sp;
-      sb[k].querySelector('.st').textContent = on ? '✔ є печатка' : 'вимкнено';
-    }
+  /* ---------- рендер: пітч ---------- */
+  function renderPitch() {
+    var sp = onStage();
+    $('p-avatar').innerHTML = sp ? PD.Avatars.full(sp) : '<div class="empty">Ще нікого на сцені.<br>Натисніть «Наступний ▶», щоб почати з першої дитини.</div>';
+    $('p-name').textContent = sp ? sp.name : '—';
+    $('p-invention').textContent = sp ? (sp.invention ? '💡 ' + sp.invention : 'винахід-сюрприз') : '';
 
-    // чекліст — для вибраної дитини
-    $('check-for').textContent = sel ? sel.name : '—';
-    var checks = document.querySelectorAll('#checklist .check');
-    for (var c = 0; c < checks.length; c++) {
-      var val = !!(sel && sel.checks[c]);
-      checks[c].querySelector('input').checked = val;
-      checks[c].querySelector('input').disabled = !sel;
-      checks[c].classList.toggle('on', val);
+    var durs = document.querySelectorAll('#durations .btn');
+    for (var j = 0; j < durs.length; j++) durs[j].classList.toggle('sel', +durs[j].getAttribute('data-d') === st.timer.duration);
+    $('p-mute').classList.toggle('on', st.muted);
+    $('p-mute').textContent = st.muted ? '🔈' : '🔇';
+    $('p-mute').title = st.muted ? 'Увімкнути звук сцени' : 'Тиша на сцені';
+
+    var stampOn = !!(sp && sp.stamps.inventor);
+    var sb = $('p-stamp');
+    sb.classList.toggle('on', stampOn);
+    sb.disabled = !sp;
+    $('p-stamp-label').textContent = stampOn ? '✔ Печатка «Винахідник» є' : 'Печатка «Винахідник»';
+
+    $('check-for').textContent = sp ? sp.name : '—';
+    var boxes = document.querySelectorAll('#checklist input');
+    for (var c = 0; c < boxes.length; c++) {
+      var val = !!(sp && sp.checks[c]);
+      boxes[c].checked = val;
+      boxes[c].disabled = !sp;
+      boxes[c].parentNode.classList.toggle('on', val);
     }
     var dur = $('duration');
-    if (document.activeElement !== dur) dur.value = sel && sel.duration != null ? sel.duration : '';
-    dur.disabled = !sel;
+    if (document.activeElement !== dur) dur.value = sp && sp.duration != null ? sp.duration : '';
+    dur.disabled = !sp;
     var hint = $('dur-hint');
-    if (sel && sel.duration != null) {
-      var ok = sel.duration >= 30 && sel.duration <= 60;
-      hint.textContent = ok ? 'у межах 30–60 с' : (sel.duration < 30 ? 'коротше за 30 с' : 'довше за 60 с');
+    if (sp && sp.duration != null) {
+      var ok = sp.duration >= 30 && sp.duration <= 60;
+      hint.textContent = ok ? 'у межах 30–60 с' : (sp.duration < 30 ? 'коротше за 30 с' : 'довше за 60 с');
       hint.className = 'dur-hint ' + (ok ? 'ok' : 'no');
     } else { hint.textContent = ''; hint.className = 'dur-hint'; }
     var note = $('note');
-    if (document.activeElement !== note) note.value = sel ? sel.note || '' : '';
-    note.disabled = !sel;
+    if (document.activeElement !== note) note.value = sp ? sp.note || '' : '';
+    note.disabled = !sp;
 
-    $('now-name').textContent = sp ? sp.name : '—';
-    renderTimer();
+    var nb = $('next');
+    var last = isLast();
+    nb.textContent = !st.speakers.length ? 'Наступний ▶' : (!sp ? '▶ Почати з першої дитини' : (last ? '🎉 До фіналу' : 'Наступний ▶'));
+    nb.classList.toggle('final', last);
+    if (sp && !last) nb.title = 'Далі: ' + st.speakers[indexOf(sp.id) + 1].name;
+    else nb.title = '';
   }
 
-  function markSel(selector, attr, val) {
-    var els = document.querySelectorAll(selector);
-    for (var i = 0; i < els.length; i++) els[i].classList.toggle('sel', val != null && +els[i].getAttribute('data-' + attr) === val);
+  function render() {
+    var tabs = document.querySelectorAll('.tab');
+    for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('on', tabs[i].getAttribute('data-tab') === st.tab);
+    $('tab-prep').classList.toggle('on', st.tab === 'prep');
+    $('tab-pitch').classList.toggle('on', st.tab === 'pitch');
+    var sp = onStage();
+    $('now-name').textContent = sp ? sp.name : '—';
+    renderPrep();
+    renderPitch();
+    renderTimer();
   }
 
   function renderTimer() {
     var t = st.timer;
     var el = elapsedMs() / 1000;
+    var idle = !t.running && el <= 0;
     var rem = t.duration - el;
     var disp = $('t-display');
-    disp.textContent = rem >= 0 ? fmt(rem) : '+' + fmt(-rem);
-    disp.classList.toggle('warn', rem > 0 && rem <= 10 && el > 0);
-    disp.classList.toggle('over', rem <= 0);
-    $('t-dur').textContent = fmt(t.duration) + (rem <= 0 ? ' · час вийшов, дитина завершує думку' : '');
+    disp.textContent = idle ? fmt(t.duration) : (rem >= 0 ? fmt(rem) : '+' + fmt(-rem));
+    disp.classList.toggle('warn', !idle && rem > 0 && rem <= 10);
+    disp.classList.toggle('over', !idle && rem <= 0);
+    $('t-state').textContent = idle ? 'готово до старту' : (rem <= 0 ? 'час вийшов — дитина завершує думку' : (t.running ? 'іде виступ · ' + fmt(el) : 'пауза · ' + fmt(el)));
     var fill = $('t-fill');
     fill.style.width = Math.min(100, (el / t.duration) * 100) + '%';
     fill.classList.toggle('warn', rem <= 10);
-    var now = $('now-time');
-    now.textContent = fmt(el);
-    now.classList.toggle('over', rem <= 0);
-    var hb = $('hdr-start');
-    hb.textContent = t.running ? '⏸️ Пауза' : '▶️ Старт';
-    hb.classList.toggle('go', !t.running);
+    $('t-start').disabled = t.running;
+    $('t-pause').disabled = !t.running;
   }
   setInterval(renderTimer, 200);
 
@@ -422,9 +457,20 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
   }
 
-  /* ---------- події інтерфейсу ---------- */
-  function closest(el, sel) { return el && el.closest ? el.closest(sel) : null; }
+  /* ---------- події: шапка ---------- */
+  document.querySelector('.tabs').addEventListener('click', function (e) {
+    var b = closest(e.target, '[data-tab]');
+    if (!b) return;
+    st.tab = b.getAttribute('data-tab');
+    ui.menuId = null;
+    commit();
+  });
+  $('status').addEventListener('click', function (e) {
+    // відкривати сцену лише коли її ще немає (щоб не було двох сцен зі звуком)
+    if (!this.classList.contains('off')) e.preventDefault();
+  });
 
+  /* ---------- події: підготовка ---------- */
   $('add-form').addEventListener('submit', function (e) {
     e.preventDefault();
     addSpeaker($('new-name').value);
@@ -432,44 +478,102 @@
     $('new-name').focus();
   });
 
-  $('speaker-list').addEventListener('click', function (e) {
-    var del = closest(e.target, '[data-del]');
-    if (del) { e.stopPropagation(); removeSpeaker(del.getAttribute('data-del')); return; }
-    var chip = closest(e.target, '[data-sid]');
-    if (chip) { st.selectedId = chip.getAttribute('data-sid'); commit(); }
+  $('kid-list').addEventListener('click', function (e) {
+    var kid = closest(e.target, '[data-sid]');
+    if (!kid) return;
+    var id = kid.getAttribute('data-sid');
+    var s = byId(id);
+    if (!s) return;
+
+    // меню «⋯» і видалення з підтвердженням
+    if (closest(e.target, '[data-menu]')) {
+      ui.menuId = ui.menuId === id ? null : id;
+      ui.confirmDelId = null;
+      renderKids(); return;
+    }
+    if (closest(e.target, '[data-del-ask]')) { ui.confirmDelId = id; renderKids(); return; }
+    if (closest(e.target, '[data-del-yes]')) { removeSpeaker(id); toast('Видалено: ' + s.name); return; }
+    if (closest(e.target, '[data-del-no]')) { ui.menuId = ui.confirmDelId = null; renderKids(); return; }
+    if (closest(e.target, '.menu')) return;
+
+    // кнопки конструктора
+    var b;
+    if ((b = closest(e.target, '[data-char]'))) { s.char = +b.getAttribute('data-char'); commit(); return; }
+    if ((b = closest(e.target, '[data-color]'))) { s.color = +b.getAttribute('data-color'); commit(); return; }
+    if ((b = closest(e.target, '[data-pet]'))) { s.pet = +b.getAttribute('data-pet'); commit(); return; }
+    if ((b = closest(e.target, '[data-stamp-pick]'))) { var k = b.getAttribute('data-stamp-pick'); s.stamps[k] = !s.stamps[k]; commit(); return; }
+    if (closest(e.target, '[data-done]')) { st.openId = null; commit(); return; }
+    if (closest(e.target, '[data-to-stage]')) { st.openId = null; st.tab = 'pitch'; putOnStage(id); return; }
+
+    // клік по рядку — розгорнути / згорнути конструктор
+    if (closest(e.target, '[data-toggle]')) {
+      ui.menuId = null;
+      if (st.openId === id) st.openId = null;
+      else { st.openId = id; st.selectedId = id; }
+      commit();
+    }
   });
 
-  $('editor').addEventListener('click', function (e) {
-    var sel = selected();
-    var b = closest(e.target, '.pick');
-    if (!sel || !b) return;
-    if (b.hasAttribute('data-char')) sel.char = +b.getAttribute('data-char');
-    if (b.hasAttribute('data-color')) sel.color = +b.getAttribute('data-color');
-    if (b.hasAttribute('data-pet')) sel.pet = +b.getAttribute('data-pet');
-    commit();
-    lastAction('🧩 Аватар ' + sel.name + ': персонаж ' + (sel.char + 1) + ', ' + PD.COLORS[sel.color].name + ', ' + PD.PETS[sel.pet].name);
-  });
-
-  $('invention').addEventListener('input', function () {
-    var sel = selected();
-    if (!sel) return;
-    sel.invention = this.value;
+  $('kid-list').addEventListener('input', function (e) {
+    if (e.target.id !== 'invention') return;
+    var s = byId(st.openId);
+    if (!s) return;
+    s.invention = e.target.value;
+    var small = closest(e.target, '.kid').querySelector('.kid-inv');
+    small.textContent = s.invention ? '💡 ' + s.invention : 'винахід ще не вписано';
     commit(true);
   });
 
-  $('to-stage').addEventListener('click', function () { putOnStage(st.selectedId); });
-  $('next').addEventListener('click', nextSpeaker);
+  // клік поза меню — закрити його
+  document.addEventListener('click', function (e) {
+    if (ui.menuId && !closest(e.target, '.menu-wrap')) { ui.menuId = ui.confirmDelId = null; renderKids(); }
+  });
 
   $('modes').addEventListener('click', function (e) {
     var b = closest(e.target, '[data-mode]');
     if (!b) return;
     st.mode = b.getAttribute('data-mode');
     commit();
-    lastAction({ gallery: '🖼️ Галерея аватарів', stage: '🎭 Сцена', final: '🎉 Фінал' }[st.mode]);
   });
   $('show-name').addEventListener('change', function () { st.showName = this.checked; commit(); });
   $('show-cheat').addEventListener('change', function () { st.showCheat = this.checked; commit(); });
 
+  $('volume').addEventListener('input', function () {
+    st.volume = +this.value / 100;
+    $('vol-val').textContent = this.value + '%';
+    commit(true);
+  });
+  function toggleMute() {
+    st.muted = !st.muted;
+    if (st.muted) PD.Sync.send('fx', { kind: 'silence' });
+    commit();
+  }
+  $('mute').addEventListener('click', toggleMute);
+  $('p-mute').addEventListener('click', toggleMute);
+  $('test-sound').addEventListener('click', function () { fx('test', null, this); });
+
+  $('copy-text').addEventListener('click', function () { copy(summaryText(), '📋 Підсумок скопійовано'); });
+  $('copy-csv').addEventListener('click', function () { copy(summaryCSV(), '📊 CSV скопійовано'); });
+  $('dl-csv').addEventListener('click', downloadCSV);
+
+  function onResetClick(e) {
+    var zone = closest(e.target, '[data-zone]').getAttribute('data-zone');
+    if (closest(e.target, '[data-reset-ask]')) { ui.resetAsk = zone; renderReset(); return; }
+    if (closest(e.target, '[data-reset-no]')) { ui.resetAsk = false; renderReset(); return; }
+    if (closest(e.target, '[data-reset-yes]')) {
+      var vol = st.volume, muted = st.muted;
+      st = defaults();
+      st.volume = vol; st.muted = muted;
+      ui.resetAsk = false;
+      commit();
+      PD.Sync.send('fx', { kind: 'clear' });
+      toast('🧹 Пульт очищено. Можна додавати нову групу');
+    }
+  }
+  $('reset-zone-top').addEventListener('click', onResetClick);
+  $('reset-zone').addEventListener('click', onResetClick);
+
+  /* ---------- події: пітч ---------- */
   $('durations').addEventListener('click', function (e) {
     var b = closest(e.target, '[data-d]');
     if (b) setDuration(+b.getAttribute('data-d'));
@@ -477,80 +581,46 @@
   $('t-start').addEventListener('click', startTimer);
   $('t-pause').addEventListener('click', pauseTimer);
   $('t-reset').addEventListener('click', resetTimerBtn);
-  $('hdr-start').addEventListener('click', function () { st.timer.running ? pauseTimer() : startTimer(); });
+  $('next').addEventListener('click', nextSpeaker);
 
-  document.addEventListener('click', function (e) {
+  $('tab-pitch').addEventListener('click', function (e) {
     var f = closest(e.target, '[data-fx]');
-    if (f) { runFx(f.getAttribute('data-fx'), f); return; }
-    var r = closest(e.target, '[data-random]');
-    if (r) { randomFrom(r.getAttribute('data-random'), r); return; }
-    var q = closest(e.target, '[data-q]');
-    if (q) { var text = PD.QUESTIONS[+q.getAttribute('data-q')]; fx('question', { text: text }, '🙋 «' + text + '»', q); return; }
-    var h = closest(e.target, '[data-hint]');
-    if (h) {
-      var k = h.getAttribute('data-hint');
-      var t = PD.TECHNIQUES.filter(function (x) { return x.key === k; })[0];
-      fx('hint', { tech: k }, '💡 Підказка: ' + t.emoji + ' ' + t.title, h);
+    if (f) {
+      var kind = f.getAttribute('data-fx');
+      fx(kind, kind === 'question' ? { text: randomQuestion() } : null, f);
       return;
     }
-    var s = closest(e.target, '[data-stamp]');
-    if (s) {
-      var sp = onStage();
-      if (!sp) return;
-      var key = s.getAttribute('data-stamp');
-      sp.stamps[key] = !sp.stamps[key];
-      commit();
-      var def = PD.STAMPS.filter(function (x) { return x.key === key; })[0];
-      lastAction((sp.stamps[key] ? '🔖 Печатка ' : '↩️ Знято печатку ') + def.label + ' · ' + sp.name);
-    }
+    var q = closest(e.target, '[data-q]');
+    if (q) { fx('question', { text: PD.QUESTIONS[+q.getAttribute('data-q')] }, q); return; }
+  });
+
+  $('p-stamp').addEventListener('click', function () {
+    var sp = onStage();
+    if (!sp) return;
+    sp.stamps.inventor = !sp.stamps.inventor;
+    commit();
   });
 
   $('checklist').addEventListener('change', function (e) {
-    var sel = selected();
+    var sp = onStage();
     var i = e.target.getAttribute('data-check');
-    if (!sel || i == null) return;
-    sel.checks[+i] = e.target.checked;
+    if (!sp || i == null) return;
+    sp.checks[+i] = e.target.checked;
     commit();
   });
   $('duration').addEventListener('input', function () {
-    var sel = selected();
-    if (!sel) return;
-    sel.duration = this.value === '' ? null : Math.max(0, Math.round(+this.value));
+    var sp = onStage();
+    if (!sp) return;
+    sp.duration = this.value === '' ? null : Math.max(0, Math.round(+this.value));
     commit(true);
   });
   $('duration').addEventListener('change', function () { render(); });
   $('note').addEventListener('input', function () {
-    var sel = selected();
-    if (!sel) return;
-    sel.note = this.value;
+    var sp = onStage();
+    if (!sp) return;
+    sp.note = this.value;
     commit(true);
   });
-
-  $('copy-text').addEventListener('click', function () { copy(summaryText(), '📋 Підсумок скопійовано'); });
-  $('copy-csv').addEventListener('click', function () { copy(summaryCSV(), '📊 CSV скопійовано'); });
-  $('dl-csv').addEventListener('click', downloadCSV);
-  $('reset-all').addEventListener('click', function () {
-    if (!confirm('Почати новий урок? Список дітей, чекліст і нотатки буде очищено.\n\nПорада: спершу скопіюйте підсумок.')) return;
-    var vol = st.volume, muted = st.muted;
-    st = defaults();
-    st.volume = vol; st.muted = muted;
-    commit();
-    fx('clear');
-    lastAction('🧹 Новий урок');
-  });
-
-  $('volume').addEventListener('input', function () {
-    st.volume = +this.value / 100;
-    $('vol-val').textContent = this.value + '%';
-    commit(true);
-  });
-  $('mute').addEventListener('click', function () {
-    st.muted = !st.muted;
-    if (st.muted) fx('silence');
-    commit();
-    lastAction(st.muted ? '🔇 Тиша' : '🔈 Звук увімкнено');
-  });
-  $('test-sound').addEventListener('click', function () { fx('test', null, '🔔 Перевірка звуку', this); });
 
   /* ---------- стан сцени ---------- */
   var stageSeen = 0, stageAudio = false, stageStarted = false;
@@ -565,11 +635,14 @@
   function renderStatus() {
     var el = $('status');
     if (Date.now() - stageSeen > 7000) {
-      el.className = 'status off'; el.textContent = '🔴 Сцену не відкрито';
+      el.className = 'status off'; el.textContent = '🔴 Сцену не відкрито — відкрити';
+      el.title = 'Натисніть, щоб відкрити сцену в новій вкладці';
     } else if (!stageStarted || !stageAudio) {
-      el.className = 'status warn'; el.textContent = '🟡 Сцена відкрита — натисніть на ній «Відкрити сцену»';
+      el.className = 'status warn'; el.textContent = '🟡 Натисніть на сцені «Відкрити сцену»';
+      el.title = 'Без цього кліку браузер не дозволить звук';
     } else {
-      el.className = 'status ok'; el.textContent = '🟢 Сцена на зв\'язку · звук увімкнено';
+      el.className = 'status ok'; el.textContent = '🟢 Сцена на зв\'язку · звук є';
+      el.title = '';
     }
   }
   setInterval(renderStatus, 1000);
@@ -577,5 +650,6 @@
   /* ---------- старт ---------- */
   buildStatic();
   commit();
+  renderStatus();
   PD.Sync.send('ping');
 })();

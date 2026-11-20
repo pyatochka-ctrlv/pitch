@@ -54,33 +54,16 @@ PD.QUESTIONS = [
   'А він не вибухне?'
 ];
 
-/* Виклики «Моє слово» */
-PD.WORD_CHALLENGES = [
-  { key: 'question',  emoji: '🙋', label: 'Питання журі' },
-  { key: 'interrupt', emoji: '✋', label: '«А можна я скажу?!»', text: 'А можна я скажу?!' },
-  { key: 'what',      emoji: '❓', label: '«Що-що? Не почули!»', text: 'Що-що? Не почули!' },
-  { key: 'louder',    emoji: '🔊', label: '«Голосніше, будь ласка!»', text: 'Голосніше, будь ласка!' }
-];
-
-/* Виклики «Незламний» */
-PD.STRONG_CHALLENGES = [
-  { key: 'giggle',    emoji: '😄', label: 'Смішок' },
-  { key: 'laughwave', emoji: '😂', label: 'Хвиля сміху' },
-  { key: 'phone',     emoji: '📞', label: 'Телефонний дзвінок' },
-  { key: 'freeze',    emoji: '🧊', label: '«Зависання»' },
-  { key: 'forgot',    emoji: '😶', label: '«Забув слово»' }
-];
-
-/* Шпаргалка технік (видно на сцені) */
+/* Шпаргалка: 4 техніки уроку (видно на сцені, якщо ввімкнути на пульті) */
 PD.TECHNIQUES = [
-  { key: 'rocket', emoji: '🚀💡❓📌🏁', title: 'Ракета',              hint: 'старт · що це · навіщо · приклад · фініш' },
-  { key: 'wait',   emoji: '✋',         title: 'Хвилинку',            hint: '«Хвилинку, я договорю»' },
-  { key: 'park',   emoji: '🅿️',         title: 'Парковка',            hint: '«Чудове питання! Відповім у кінці»' },
-  { key: 'bridge', emoji: '🌉',         title: 'Мостик',              hint: '«…і це якраз про мій винахід!»' },
-  { key: 'laugh',  emoji: '😄',         title: 'Дочекайся і назви',   hint: 'пауза → «Смішно, правда?» → далі' }
+  { key: 'candle', emoji: '🕯️', title: 'Свічка' },
+  { key: 'rocket', emoji: '🚀', title: 'Ракета' },
+  { key: 'bridge', emoji: '✋', title: 'Хвилинку → Мостик' },
+  { key: 'smile',  emoji: '🙂', title: 'Пауза — посмішка — продовжую' }
 ];
-/* Які техніки можна підсвітити підказкою */
-PD.HINTS = ['wait', 'park', 'bridge', 'laugh'];
+
+/* Тривалості таймера (секунди) */
+PD.DURATIONS = [30, 45, 60];
 
 /* Печатки паспорта */
 PD.STAMPS = [
@@ -100,6 +83,12 @@ PD.CHECKLIST = [
   'Обрав(-ла) реакцію на сміх і продовжив(-ла)',
   'Завершив(-ла) думку фінальною фразою'
 ];
+
+/* Ім'я з великої літери */
+PD.cap = function (s) {
+  s = String(s == null ? '' : s).trim();
+  return s ? s.charAt(0).toLocaleUpperCase('uk') + s.slice(1) : s;
+};
 
 PD.uid = function () {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);

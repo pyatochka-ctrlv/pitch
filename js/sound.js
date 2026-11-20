@@ -9,7 +9,7 @@ window.PD = window.PD || {};
 PD.Sound = (function () {
   var ctx = null, master = null, noiseBuf = null;
   var volume = 0.7, muted = false;
-  var FILES = { giggle: 'giggle', laughwave: 'laugh-wave', applause: 'applause', phone: 'phone-ring' };
+  var FILES = { applause: 'applause' };
   var EXT = ['mp3', 'ogg', 'wav'];
   var files = {};          // key -> HTMLAudioElement (тільки ті, що завантажились)
   var playing = [];        // активні HTMLAudioElement
@@ -152,13 +152,6 @@ PD.Sound = (function () {
     s.start(t0, Math.random() * 0.5); track(s, t0 + dur + 0.05);
   }
 
-  function giggleRun(start, base, n) {
-    for (var i = 0; i < n; i++) {
-      var f = base * (1 - i * 0.04);
-      tone(f, start + i * 0.13, 0.09, { type: 'triangle', gain: 0.16, to: f * 0.8, vib: 22, vibDepth: 40 });
-    }
-  }
-
   var SYNTH = {
     ding: function () {
       tone(1318, 0, 1.4, { gain: 0.16 });
@@ -166,14 +159,6 @@ PD.Sound = (function () {
     },
     pop: function () { tone(320, 0, 0.16, { to: 980, gain: 0.25 }); tone(660, 0.12, 0.25, { to: 1320, gain: 0.12 }); },
     question: function () { tone(520, 0, 0.14, { type: 'triangle', gain: 0.22 }); tone(720, 0.14, 0.22, { type: 'triangle', gain: 0.22, to: 820 }); },
-    interrupt: function () { [620, 760, 920].forEach(function (f, i) { tone(f, i * 0.09, 0.08, { type: 'square', gain: 0.07 }); }); },
-    what: function () { tone(560, 0, 0.16, { type: 'triangle', gain: 0.2, to: 470 }); tone(470, 0.2, 0.28, { type: 'triangle', gain: 0.2, to: 640 }); },
-    louder: function () { [392, 494, 659].forEach(function (f, i) { tone(f, i * 0.12, 0.14, { type: 'sawtooth', gain: 0.06 }); }); },
-    giggle: function () { giggleRun(0, 980, 5); },
-    laughwave: function () {
-      giggleRun(0, 900, 6); giggleRun(0.35, 1150, 7); giggleRun(0.8, 760, 7); giggleRun(1.3, 1050, 6); giggleRun(1.7, 850, 5);
-      noise(0, 2.6, { freq: 900, q: 0.6, gain: 0.05, attack: 0.6 });
-    },
     applause: function () {
       for (var i = 0; i < 140; i++) {
         var t = Math.random() * 2.6;
@@ -181,21 +166,9 @@ PD.Sound = (function () {
         noise(t, 0.04, { freq: 1200 + Math.random() * 1800, q: 1.2, gain: 0.22 * env });
       }
     },
-    phone: function () {
-      for (var r = 0; r < 2; r++) {
-        for (var i = 0; i < 22; i++) {
-          tone(i % 2 ? 1250 : 1550, r * 1.6 + i * 0.045, 0.045, { type: 'square', gain: 0.05, attack: 0.003 });
-        }
-      }
-    },
-    freeze: function () {
-      for (var i = 0; i < 4; i++) tone(110 + i * 15, i * 0.07, 0.05, { type: 'square', gain: 0.05, attack: 0.002 });
-    },
-    forgot: function () { tone(620, 0, 0.6, { type: 'triangle', gain: 0.14, to: 380 }); },
     star: function () { [784, 988, 1175, 1568, 1976].forEach(function (f, i) { tone(f, i * 0.07, 0.5, { gain: 0.11 }); }); },
     stamp: function () { tone(170, 0, 0.18, { to: 45, gain: 0.5 }); noise(0, 0.06, { freq: 600, gain: 0.25, filter: 'lowpass' }); },
-    fanfare: function () { [523, 659, 784, 1047].forEach(function (f, i) { tone(f, i * 0.13, i === 3 ? 0.9 : 0.2, { type: 'triangle', gain: 0.17 }); }); },
-    hint: function () { /* підказка — тихо, без звуку */ }
+    fanfare: function () { [523, 659, 784, 1047].forEach(function (f, i) { tone(f, i * 0.13, i === 3 ? 0.9 : 0.2, { type: 'triangle', gain: 0.17 }); }); }
   };
 
   function synth(key) {

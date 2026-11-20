@@ -1,11 +1,12 @@
 /* =========================================================
    СЦЕНА: отримує стан і події з пульта та показує їх.
+   Ефекти (хмарки журі, оплески, «незбивний момент»)
+   показуються лише в режимі «Сцена».
    ========================================================= */
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var stageEl = $('stage');
   var view = null;
-  var frozen = false;
   var lastRemaining = null;
   var timers = {};          // іменовані таймаути ефектів
   var C = 2 * Math.PI * 68; // довжина кільця таймера
@@ -30,18 +31,24 @@
   }
   function rand(a, b) { return a + Math.random() * (b - a); }
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function mmss(sec) {
+    sec = Math.max(0, Math.ceil(sec));
+    return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+  }
+  function isStageMode() { return !!view && view.mode === 'stage'; }
 
   /* ---------- статичні частини ---------- */
   function buildStatic() {
-    // печатки
+    // печатки: коло + назва під ним
     $('stamps').innerHTML = PD.STAMPS.map(function (s) {
-      return '<div class="stamp-slot" data-key="' + s.key + '"><span class="ghost">' + s.label + '</span></div>';
+      return '<div class="stamp-cell" data-key="' + s.key + '" style="--ink:' + s.ink + '">' +
+        '<div class="stamp-slot" data-key="' + s.key + '"></div>' +
+        '<div class="stamp-name">' + s.label + '</div></div>';
     }).join('');
 
-    // шпаргалка
+    // шпаргалка: лише іконка + назва
     $('cheat-list').innerHTML = PD.TECHNIQUES.map(function (t) {
-      return '<div class="tech ' + t.key + '" data-key="' + t.key + '">' +
-        '<div class="te">' + t.emoji + '</div><div><div class="tt">' + t.title + '</div><div class="th">' + t.hint + '</div></div></div>';
+      return '<div class="tech" data-key="' + t.key + '"><div class="te">' + t.emoji + '</div><div class="tt">' + t.title + '</div></div>';
     }).join('');
 
     // журі: три силуети зі спини
@@ -52,7 +59,7 @@
     ];
     $('jury').innerHTML = shapes.map(function (s, i) {
       return '<div class="juror j' + i + '">' +
-        '<div class="bubble"></div><div class="prop"></div>' +
+        '<div class="bubble"></div>' +
         '<svg viewBox="0 0 230 150" aria-hidden="true">' +
         '<path class="body" d="M8 160 Q8 96 115 88 Q222 96 222 160 Z"/>' + s + '</svg></div>';
     }).join('');
@@ -85,6 +92,7 @@
 
     // режим
     if (sig.mode !== v.mode) {
+      if (!initial) clearEffects();
       stageEl.classList.remove('mode-gallery', 'mode-stage', 'mode-final');
       stageEl.classList.add('mode-' + (v.mode || 'gallery'));
       if (!initial && v.mode === 'final') celebrate();
@@ -113,8 +121,7 @@
     sig.preview = s;
     if (!p) { $('g-preview-slot').innerHTML = ''; $('g-preview-caption').textContent = ''; return; }
     $('g-preview-slot').innerHTML = PD.Avatars.full(p, 'live breathe' + (initial ? '' : ' pop'));
-    var pet = PD.PETS[p.pet];
-    $('g-preview-caption').textContent = 'Персонаж ' + (p.char + 1) + ', ' + PD.COLORS[p.color].name + ', ' + pet.name;
+    $('g-preview-caption').textContent = 'Персонаж ' + (p.char + 1) + ', ' + PD.COLORS[p.color].name + ', ' + PD.PETS[p.pet].name;
     if (!initial && v.mode === 'gallery') PD.Sound.play('pop');
   }
 
@@ -127,8 +134,8 @@
       renderStamps(null, null, true);
       return;
     }
-    // ім'я та винахід
-    $('speaker-name').textContent = sp.name ? sp.name + ' представляє:' : '';
+    // ім'я (з великої літери) та винахід
+    $('speaker-name').textContent = sp.name ? PD.cap(sp.name) + ' представляє:' : '';
     var inv = (sp.invention || '').trim();
     var invEl = $('invention');
     invEl.textContent = inv ? '💡 ' + inv : '💡 Винахід-сюрприз';
@@ -142,30 +149,31 @@
       $('speaker-slot').innerHTML = PD.Avatars.full(sp, 'live breathe');
       sig.stage = s;
       sig.stageId = sp.id;
-      if (newSpeaker && !initial) enter();
+      if (newSpeaker && !initial && v.mode === 'stage') enter();
     }
 
     // печатки
     var sameSpeaker = prev && prev.stage && prev.stage.id === sp.id;
-    renderStamps(sp.stamps, sameSpeaker ? prev.stage.stamps : null, initial || !sameSpeaker);
+    renderStamps(sp.stamps, sameSpeaker ? prev.stage.stamps : null, initial || !sameSpeaker || v.mode !== 'stage');
   }
 
   function renderStamps(stamps, prevStamps, silent) {
-    var slots = $('stamps').children;
+    var cells = document.querySelectorAll('#stamps .stamp-cell');
     var slammed = false;
-    for (var i = 0; i < slots.length; i++) {
-      var key = slots[i].getAttribute('data-key');
+    for (var i = 0; i < cells.length; i++) {
+      var key = cells[i].getAttribute('data-key');
+      var slot = cells[i].querySelector('.stamp-slot');
       var on = !!(stamps && stamps[key]);
       var was = !!(prevStamps && prevStamps[key]);
-      var existing = slots[i].querySelector('.stamp');
+      var existing = slot.querySelector('.stamp');
+      cells[i].classList.toggle('on', on);
       if (on && !existing) {
         var def = PD.STAMPS[i];
         var el = document.createElement('div');
         el.className = 'stamp' + (silent ? '' : ' slam');
-        el.style.setProperty('--ink', def.ink);
         el.style.setProperty('--rot', Math.round(rand(-14, 12)) + 'deg');
-        el.innerHTML = '<span class="e">' + def.emoji + '</span><span class="l">' + def.label + '</span>';
-        slots[i].appendChild(el);
+        el.innerHTML = '<span class="e">' + def.emoji + '</span>';
+        slot.appendChild(el);
         if (!silent && !was) slammed = true;
       } else if (!on && existing) {
         existing.remove();
@@ -203,8 +211,8 @@
     grid.style.width = gw + 'px';
     grid.style.left = Math.round((1280 - gw) / 2) + 'px';
     grid.style.setProperty('--fh', Math.floor(best.h) + 'px');
-    grid.innerHTML = all.map(function (a, i) {
-      var cap = (a.name ? '<b>' + esc(a.name) + '</b>' : '') + (a.invention ? '<span class="fi">' + esc(a.invention) + '</span>' : '');
+    grid.innerHTML = all.map(function (a) {
+      var cap = (a.name ? '<b>' + esc(PD.cap(a.name)) + '</b>' : '') + (a.invention ? '<span class="fi">' + esc(a.invention) + '</span>' : '');
       return '<div class="f-item" style="width:' + w + 'px">' +
         PD.Avatars.full(a, 'live breathe') +
         (cap ? '<div class="f-cap">' + cap + '</div>' : '') + '</div>';
@@ -215,27 +223,28 @@
   }
 
   /* ---------- таймер ---------- */
-  function tick(force) {
-    if (!view || (frozen && !force)) return;
+  function tick() {
+    if (!view) return;
     var t = view.timer || { duration: 60, running: false, accumulated: 0 };
     var dur = (t.duration || 60) * 1000;
     var elapsed = (t.accumulated || 0) + (t.running ? Date.now() - t.startedAt : 0);
-    var remaining = dur - elapsed;
-    var started = t.running || elapsed > 0;
+    var idle = !t.running && elapsed <= 0;
+    var remaining = idle ? dur : dur - elapsed;
+    var done = !idle && remaining <= 0;
 
     var ring = $('ring');
-    var frac = remaining <= 0 ? 1 : Math.max(0, Math.min(1, remaining / dur));
+    var frac = done ? 1 : Math.max(0, Math.min(1, remaining / dur));
     ring.style.strokeDasharray = C;
     ring.style.strokeDashoffset = C * (1 - frac);
 
     var timerEl = $('timer');
-    var done = remaining <= 0;
-    $('timer-text').textContent = done ? '🏁' : String(Math.ceil(remaining / 1000));
-    timerEl.classList.toggle('warn', started && !done && remaining <= 10000);
+    // поки таймер не запущено — показуємо обрану тривалість, напр. «1:00»
+    $('timer-text').textContent = done ? '🏁' : mmss(remaining / 1000);
+    timerEl.classList.toggle('warn', !idle && !done && remaining <= 10000);
     timerEl.classList.toggle('done', done);
     stageEl.classList.toggle('time-done', done);
 
-    if (done && lastRemaining !== null && lastRemaining > 0 && t.running) PD.Sound.play('ding');
+    if (done && lastRemaining !== null && lastRemaining > 0 && t.running && isStageMode()) PD.Sound.play('ding');
     lastRemaining = remaining;
 
     // спікер погойдується, поки йде таймер
@@ -260,28 +269,19 @@
     var js = jurors();
     for (var i = 0; i < js.length; i++) {
       js[i].querySelector('.bubble').classList.remove('show');
-      js[i].querySelector('.prop').className = 'prop';
-      js[i].classList.remove('talk', 'shake');
+      js[i].classList.remove('talk');
     }
   }
 
-  function say(text, opts) {
-    opts = opts || {};
+  function say(text) {
     hideBubbles();
-    var idx = opts.juror != null ? opts.juror : Math.floor(Math.random() * 3);
-    var j = jurors()[idx];
+    var j = jurors()[Math.floor(Math.random() * 3)];
     var b = j.querySelector('.bubble');
     b.textContent = text;
     void b.offsetWidth;
     b.classList.add('show');
     j.classList.add('talk');
-    if (opts.prop) {
-      var p = j.querySelector('.prop');
-      p.textContent = opts.prop;
-      p.className = 'prop show ' + (opts.propClass || '');
-    }
-    later('bubble', opts.ms || 3600, hideBubbles);
-    return idx;
+    later('bubble', 3800, hideBubbles);
   }
 
   function floatEmoji(emoji, x, y, opt) {
@@ -325,24 +325,33 @@
   }
   function loop() {
     raf = null;
-    if (!frozen) {
-      cx.clearRect(0, 0, 1280, 720);
-      for (var i = parts.length - 1; i >= 0; i--) {
-        var p = parts[i];
-        p.vy += 0.22; p.vx *= 0.99; p.vy = Math.min(p.vy, 7);
-        p.x += p.vx; p.y += p.vy; p.r += p.vr; p.life--;
-        if (p.life <= 0 || p.y > 760) { parts.splice(i, 1); continue; }
-        cx.save(); cx.translate(p.x, p.y); cx.rotate(p.r);
-        cx.globalAlpha = Math.min(1, p.life / 30);
-        cx.fillStyle = p.c; cx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 2)) + 1);
-        cx.restore();
-      }
+    cx.clearRect(0, 0, 1280, 720);
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var p = parts[i];
+      p.vy += 0.22; p.vx *= 0.99; p.vy = Math.min(p.vy, 7);
+      p.x += p.vx; p.y += p.vy; p.r += p.vr; p.life--;
+      if (p.life <= 0 || p.y > 760) { parts.splice(i, 1); continue; }
+      cx.save(); cx.translate(p.x, p.y); cx.rotate(p.r);
+      cx.globalAlpha = Math.min(1, p.life / 30);
+      cx.fillStyle = p.c; cx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 2)) + 1);
+      cx.restore();
     }
     if (parts.length) raf = requestAnimationFrame(loop);
     else cx.clearRect(0, 0, 1280, 720);
   }
 
-  /* ---------- ефекти й виклики ---------- */
+  /* прибрати всі ефекти (при зміні режиму або з пульта) */
+  function clearEffects() {
+    hideBubbles();
+    clearTimeout(timers.bubble);
+    $('fx-layer').innerHTML = '';
+    parts = [];
+    cx.clearRect(0, 0, 1280, 720);
+    var av = speakerAv();
+    if (av) av.classList.remove('scratch', 'joy', 'appear');
+  }
+
+  /* ---------- ефекти ---------- */
   function enter() {
     var av = speakerAv();
     if (av) { av.classList.remove('appear'); void av.offsetWidth; av.classList.add('appear'); }
@@ -359,71 +368,13 @@
     setTimeout(function () { PD.Sound.play('applause'); }, 600);
   }
 
-  function petLaugh(ms) { flashClass(speakerAv(), 'laughing', ms, 'laughing'); }
-
-  var FX = {
+  // ефекти, що працюють лише в режимі «Сцена»
+  var STAGE_FX = {
     question: function (d) {
       say('🙋 ' + (d && d.text ? d.text : pick(PD.QUESTIONS)));
       flashClass(speakerAv(), 'scratch', 2700, 'scratch');
       PD.Sound.play('question');
     },
-    interrupt: function () {
-      say('✋ А можна я скажу?!', { prop: '✋', propClass: 'wave' });
-      PD.Sound.play('interrupt');
-    },
-    what: function () { say('❓ Що-що? Не почули!'); PD.Sound.play('what'); },
-    louder: function () { say('🔊 Голосніше, будь ласка!', { prop: '📢' }); PD.Sound.play('louder'); },
-
-    giggle: function () {
-      hideBubbles();
-      var i = Math.floor(Math.random() * 3), j = jurors()[i];
-      j.classList.add('shake');
-      later('shake', 2200, function () { j.classList.remove('shake'); });
-      for (var k = 0; k < 4; k++) floatEmoji('😄', jurorX(i) - 30 + rand(-40, 40), 560, { delay: k * 0.3, size: 46, dy: -rand(220, 320) });
-      petLaugh(2800);
-      PD.Sound.play('giggle');
-    },
-    laughwave: function () {
-      hideBubbles();
-      var js = jurors();
-      for (var i = 0; i < js.length; i++) js[i].classList.add('shake');
-      later('shake', 3400, function () { for (var i = 0; i < js.length; i++) js[i].classList.remove('shake'); });
-      for (var k = 0; k < 26; k++) {
-        floatEmoji(k % 5 === 0 ? '🤣' : '😂', rand(80, 1160), rand(560, 640), { delay: rand(0, 2), size: rand(40, 72), dur: rand(2.2, 3), dy: -rand(380, 560) });
-      }
-      petLaugh(3600);
-      PD.Sound.play('laughwave');
-    },
-    phone: function () {
-      say('📞 Дзинь-дзинь!', { prop: '📱', propClass: 'buzz', ms: 3600 });
-      PD.Sound.play('phone', { maxMs: 3500 });
-    },
-    freeze: function () {
-      if (frozen) return;
-      frozen = true;
-      stageEl.classList.add('frozen');
-      PD.Sound.play('freeze');
-      var jerks = [[450, 'jerk1'], [950, 'jerk2'], [1450, 'jerk3'], [1750, 'jerk1']];
-      jerks.forEach(function (j) {
-        setTimeout(function () {
-          stageEl.classList.add(j[1]);
-          setTimeout(function () { stageEl.classList.remove(j[1]); }, 90);
-        }, j[0]);
-      });
-      setTimeout(function () {
-        stageEl.classList.remove('frozen');
-        frozen = false;
-        if (parts.length && !raf) raf = requestAnimationFrame(loop);
-        tick(true);
-      }, 2000);
-    },
-    forgot: function () {
-      var c = $('forgot-cloud');
-      c.classList.add('show');
-      later('forgot', 3600, function () { c.classList.remove('show'); });
-      PD.Sound.play('forgot');
-    },
-
     applause: function () {
       hideBubbles();
       burst(80, 180, 640, 0.5);
@@ -454,36 +405,13 @@
       flashClass(speakerAv(), 'joy', 2000, 'joy');
       PD.Sound.play('star');
     },
-    hint: function (d) {
-      var key = d && d.tech;
-      var t = PD.TECHNIQUES.filter(function (x) { return x.key === key; })[0];
-      if (!t) return;
-      var rows = document.querySelectorAll('#cheat-list .tech');
-      for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('lit', rows[i].getAttribute('data-key') === key);
-      var chip = $('hint-chip');
-      if (!view || !view.showCheat) {
-        chip.textContent = t.emoji + ' ' + t.title;
-        chip.classList.add('show');
-      }
-      flashClass(speakerAv(), 'idea', 5500, 'idea');
-      later('hint', 6000, function () {
-        for (var i = 0; i < rows.length; i++) rows[i].classList.remove('lit');
-        chip.classList.remove('show');
-      });
-    },
+    enter: function () { enter(); }
+  };
 
-    enter: function () { enter(); },
+  // службові команди — у будь-якому режимі
+  var ANY_FX = {
     silence: function () { PD.Sound.stopAll(); },
-    clear: function () {
-      hideBubbles();
-      $('forgot-cloud').classList.remove('show');
-      $('hint-chip').classList.remove('show');
-      $('fx-layer').innerHTML = '';
-      parts = [];
-      var rows = document.querySelectorAll('#cheat-list .tech');
-      for (var i = 0; i < rows.length; i++) rows[i].classList.remove('lit');
-      PD.Sound.stopAll();
-    },
+    clear: function () { clearEffects(); PD.Sound.stopAll(); },
     test: function () {
       PD.Sound.play('ding');
       var t = document.createElement('div');
@@ -501,9 +429,10 @@
 
   PD.Sync.on(function (msg) {
     if (msg.type === 'view') applyView(msg.data, false);
-    else if (msg.type === 'fx' && msg.data && FX[msg.data.kind]) {
-      if (frozen && msg.data.kind !== 'clear' && msg.data.kind !== 'silence') return;
-      FX[msg.data.kind](msg.data);
+    else if (msg.type === 'fx' && msg.data) {
+      var k = msg.data.kind;
+      if (ANY_FX[k]) ANY_FX[k](msg.data);
+      else if (STAGE_FX[k] && isStageMode()) STAGE_FX[k](msg.data);
     }
     else if (msg.type === 'ping') reportStatus();
   });
@@ -522,7 +451,7 @@
 
   buildStatic();
   applyView(PD.Sync.load(PD.KEY_VIEW, null) || {
-    mode: 'gallery', showCheat: true, volume: 0.7, muted: false,
+    mode: 'gallery', showCheat: false, volume: 0.7, muted: false,
     timer: { duration: 60, running: false, startedAt: 0, accumulated: 0 },
     preview: null, stage: null, all: []
   }, true);
