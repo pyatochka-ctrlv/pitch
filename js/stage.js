@@ -188,7 +188,7 @@
 
   function renderFinal(v) {
     var all = v.all || [];
-    var s = all.map(function (a) { return a.id + avSig(a) + (a.invention || '') + (a.name || ''); }).join('|');
+    var s = all.map(function (a) { return a.id + avSig(a) + (a.invention || '') + (a.name || '') + stampSig(a.stamps); }).join('|');
     if (s === sig.final) return;
     sig.final = s;
     var grid = $('final-grid');
@@ -196,7 +196,7 @@
 
     // підбираємо розмір, щоб усі вмістилися
     var W = 1160, H = 560, GAP = 14, K = 1.12, n = all.length;
-    var capH = all.some(function (a) { return a.name; }) ? 64 : 46;
+    var capH = (all.some(function (a) { return a.name; }) ? 64 : 46) + 36;   // + рядок печаток
     var best = { h: 40, perRow: n };
     for (var rows = 1; rows <= 4; rows++) {
       var perRow = Math.ceil(n / rows);
@@ -211,15 +211,27 @@
     grid.style.width = gw + 'px';
     grid.style.left = Math.round((1280 - gw) / 2) + 'px';
     grid.style.setProperty('--fh', Math.floor(best.h) + 'px');
+    grid.style.setProperty('--fs', Math.round(Math.max(22, Math.min(32, best.h * 0.17))) + 'px');
     grid.innerHTML = all.map(function (a) {
       var cap = (a.name ? '<b>' + esc(PD.cap(a.name)) + '</b>' : '') + (a.invention ? '<span class="fi">' + esc(a.invention) + '</span>' : '');
       return '<div class="f-item" style="width:' + w + 'px">' +
         PD.Avatars.full(a, 'live breathe') +
+        finalStamps(a.stamps) +
         (cap ? '<div class="f-cap">' + cap + '</div>' : '') + '</div>';
     }).join('');
     // різний ритм дихання, щоб не рухались синхронно
     var avs = grid.querySelectorAll('.av-idle');
     for (var i = 0; i < avs.length; i++) avs[i].style.animationDelay = (-i * 0.53) + 's';
+  }
+
+  function stampSig(st) { return PD.STAMPS.map(function (d) { return st && st[d.key] ? 1 : 0; }).join(''); }
+
+  // зібрані печатки дитини для екрана «Фінал»
+  function finalStamps(st) {
+    var got = PD.STAMPS.filter(function (d) { return st && st[d.key]; });
+    return '<div class="f-stamps">' + got.map(function (d) {
+      return '<span class="f-stamp" style="--ink:' + d.ink + '" title="' + d.label + '">' + d.emoji + '</span>';
+    }).join('') + '</div>';
   }
 
   /* ---------- таймер ---------- */

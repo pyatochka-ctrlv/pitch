@@ -30,6 +30,8 @@
   st = Object.assign(defaults(), st);
   st.timer = Object.assign(freshTimer(60), st.timer || {});
   if (PD.DURATIONS.indexOf(st.timer.duration) < 0 && !st.timer.running) st.timer = freshTimer(60);
+  // у кожної дитини — свій набір печаток (додаємо відсутні ключі для старих збережень)
+  st.speakers.forEach(function (s) { s.stamps = Object.assign(blankStamps(), s.stamps || {}); });
 
   // тимчасовий стан інтерфейсу (не зберігається)
   var ui = { menuId: null, confirmDelId: null, resetAsk: false };
@@ -79,7 +81,7 @@
         stamps: Object.assign({}, sp.stamps)
       } : null,
       all: st.speakers.map(function (s) {
-        return { id: s.id, char: s.char, color: s.color, pet: s.pet, invention: s.invention || '', name: st.showName ? PD.cap(s.name) : '' };
+        return { id: s.id, char: s.char, color: s.color, pet: s.pet, invention: s.invention || '', name: st.showName ? PD.cap(s.name) : '', stamps: Object.assign({}, s.stamps) };
       })
     };
   }
@@ -135,6 +137,19 @@
   }
 
   function resetTimer() { st.timer = freshTimer(st.timer.duration); }
+
+  /* ---------- печатки (особисті для кожної дитини) ---------- */
+  function stampDef(key) { return PD.STAMPS.filter(function (d) { return d.key === key; })[0]; }
+  function animateStamp(id, key) {
+    // анімація штампа на пульті: клітинка таблиці й кнопка в «Пітчі»
+    var els = document.querySelectorAll('[data-cell="' + id + '|' + key + '"]' + (id === st.stageId ? ', [data-pstamp="' + key + '"]' : ''));
+    for (var i = 0; i < els.length; i++) { els[i].classList.remove('stamped'); void els[i].offsetWidth; els[i].classList.add('stamped'); }
+  }
+  function toggleStamp(s, key) {
+    s.stamps[key] = !s.stamps[key];
+    commit();
+    if (s.stamps[key]) animateStamp(s.id, key);
+  }
 
   function putOnStage(id) {
     var s = byId(id);
@@ -240,17 +255,12 @@
       return '<button class="pick' + (s.pet === i ? ' sel' : '') + '" type="button" data-pet="' + i + '">' +
         '<span class="n">' + p.n + '</span>' + pic + '<span class="lbl">' + p.name + '</span></button>';
     }).join('');
-    var stamps = PD.STAMPS.map(function (d) {
-      return '<button class="stamp-pick' + (s.stamps[d.key] ? ' on' : '') + '" type="button" data-stamp-pick="' + d.key + '" style="--ink:' + d.ink + '">' +
-        d.emoji + ' ' + d.label + '</button>';
-    }).join('');
     return '<div class="kid-editor">' +
       '<div class="ed-label">Персонаж</div><div class="pick-row chars">' + chars + '</div>' +
       '<div class="ed-label">Колір одягу</div><div class="pick-row colors">' + colors + '</div>' +
       '<div class="ed-label">Тваринка-помічник</div><div class="pick-row pets">' + pets + '</div>' +
       '<div class="ed-label">Винахід <small>(вставте текст із генератора)</small></div>' +
       '<textarea id="invention" rows="2" maxlength="120" placeholder="Напр.: Парасолька, що співає, коли починається дощ">' + esc(s.invention) + '</textarea>' +
-      '<div class="ed-label">Печатки паспорта <small>(за тренування на слайдах)</small></div><div class="stamp-picks">' + stamps + '</div>' +
       '<div class="ed-actions">' +
         '<button class="btn-inline green" type="button" data-done>✅ Готово</button>' +
         '<button class="btn-inline" type="button" data-to-stage>🎤 На сцену</button>' +
@@ -308,8 +318,29 @@
     $('reset-zone').innerHTML = resetHtml('bottom');
   }
 
+  function renderPassports() {
+    var box = $('passport-table');
+    if (!st.speakers.length) { box.innerHTML = '<div class="empty">Тут з\'являться паспорти, коли ви додасте дітей.</div>'; return; }
+    var head = '<div class="pp-row pp-head"><div class="pp-kid"></div>' + PD.STAMPS.map(function (d) {
+      var all = st.speakers.every(function (s) { return s.stamps[d.key]; });
+      return '<div class="pp-col" style="--ink:' + d.ink + '"><span class="pp-e">' + d.emoji + '</span><span class="pp-l">' + d.label + '</span>' +
+        '<button class="pp-all" type="button" data-all="' + d.key + '"' + (all ? ' disabled' : '') + '>' + (all ? '✓ усі' : 'усім') + '</button></div>';
+    }).join('') + '</div>';
+    var rows = st.speakers.map(function (s) {
+      return '<div class="pp-row' + (s.id === st.stageId ? ' live' : '') + '"><div class="pp-kid"><span class="pp-mini">' + PD.Avatars.character(s.char, s.color) + '</span>' +
+        '<span class="pp-name">' + esc(s.name) + '</span></div>' +
+        PD.STAMPS.map(function (d) {
+          var on = !!s.stamps[d.key];
+          return '<button class="pp-cell' + (on ? ' on' : '') + '" type="button" data-cell="' + s.id + '|' + d.key + '" style="--ink:' + d.ink + '"' +
+            ' title="' + esc(s.name) + ': ' + d.label + (on ? ' — є' : ' — немає') + '">' + (on ? '✓' : d.emoji) + '</button>';
+        }).join('') + '</div>';
+    }).join('');
+    box.innerHTML = '<div class="pp-table">' + head + rows + '</div>';
+  }
+
   function renderPrep() {
     renderKids();
+    renderPassports();
     var modes = document.querySelectorAll('#modes .btn');
     for (var i = 0; i < modes.length; i++) modes[i].classList.toggle('sel', modes[i].getAttribute('data-mode') === st.mode);
     $('show-name').checked = st.showName;
@@ -334,11 +365,13 @@
     $('p-mute').textContent = st.muted ? '🔈' : '🔇';
     $('p-mute').title = st.muted ? 'Увімкнути звук сцени' : 'Тиша на сцені';
 
-    var stampOn = !!(sp && sp.stamps.inventor);
-    var sb = $('p-stamp');
-    sb.classList.toggle('on', stampOn);
-    sb.disabled = !sp;
-    $('p-stamp-label').textContent = stampOn ? '✔ Печатка «Винахідник» є' : 'Печатка «Винахідник»';
+    // рядок із 5 печаток поточної дитини («Винахідник» — найбільша)
+    $('p-stamps').innerHTML = PD.STAMPS.map(function (d) {
+      var on = !!(sp && sp.stamps[d.key]);
+      return '<button class="pstamp' + (on ? ' on' : '') + (d.key === 'inventor' ? ' main' : '') + '" type="button" data-pstamp="' + d.key + '"' +
+        ' style="--ink:' + d.ink + '"' + (sp ? '' : ' disabled') + ' title="' + d.label + (on ? ' — є (клік, щоб зняти)' : ' — поставити') + '">' +
+        '<span class="e">' + d.emoji + '</span><span class="l">' + d.label + '</span>' + (on ? '<span class="ok">✓</span>' : '') + '</button>';
+    }).join('');
 
     $('check-for').textContent = sp ? sp.name : '—';
     var boxes = document.querySelectorAll('#checklist input');
@@ -501,7 +534,6 @@
     if ((b = closest(e.target, '[data-char]'))) { s.char = +b.getAttribute('data-char'); commit(); return; }
     if ((b = closest(e.target, '[data-color]'))) { s.color = +b.getAttribute('data-color'); commit(); return; }
     if ((b = closest(e.target, '[data-pet]'))) { s.pet = +b.getAttribute('data-pet'); commit(); return; }
-    if ((b = closest(e.target, '[data-stamp-pick]'))) { var k = b.getAttribute('data-stamp-pick'); s.stamps[k] = !s.stamps[k]; commit(); return; }
     if (closest(e.target, '[data-done]')) { st.openId = null; commit(); return; }
     if (closest(e.target, '[data-to-stage]')) { st.openId = null; st.tab = 'pitch'; putOnStage(id); return; }
 
@@ -594,11 +626,31 @@
     if (q) { fx('question', { text: PD.QUESTIONS[+q.getAttribute('data-q')] }, q); return; }
   });
 
-  $('p-stamp').addEventListener('click', function () {
+  $('p-stamps').addEventListener('click', function (e) {
+    var b = closest(e.target, '[data-pstamp]');
     var sp = onStage();
-    if (!sp) return;
-    sp.stamps.inventor = !sp.stamps.inventor;
-    commit();
+    if (!b || !sp) return;
+    toggleStamp(sp, b.getAttribute('data-pstamp'));
+  });
+
+  $('passport-table').addEventListener('click', function (e) {
+    var c = closest(e.target, '[data-cell]');
+    if (c) {
+      var parts = c.getAttribute('data-cell').split('|');
+      var s = byId(parts[0]);
+      if (s) toggleStamp(s, parts[1]);
+      return;
+    }
+    var a = closest(e.target, '[data-all]');
+    if (a) {
+      var key = a.getAttribute('data-all');
+      var fresh = st.speakers.filter(function (s) { return !s.stamps[key]; });
+      if (!fresh.length) return;
+      fresh.forEach(function (s) { s.stamps[key] = true; });
+      commit();
+      fresh.forEach(function (s) { animateStamp(s.id, key); });
+      toast('Печатку «' + stampDef(key).label + '» поставлено всім (' + fresh.length + ')');
+    }
   });
 
   $('checklist').addEventListener('change', function (e) {

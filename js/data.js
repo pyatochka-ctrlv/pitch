@@ -67,11 +67,11 @@ PD.DURATIONS = [30, 45, 60];
 
 /* Печатки паспорта */
 PD.STAMPS = [
-  { key: 'calm',     emoji: '😌', label: 'Спокій',     ink: '#2f6fdb' },
-  { key: 'rocket',   emoji: '🚀', label: 'Ракета',     ink: '#d9480f' },
-  { key: 'word',     emoji: '✋', label: 'Моє слово',  ink: '#7c3aed' },
-  { key: 'strong',   emoji: '💪', label: 'Незламний',  ink: '#0f9d58' },
-  { key: 'inventor', emoji: '💡', label: 'Винахідник', ink: '#c2185b' }
+  { key: 'calm',     emoji: '🔵', label: 'Спокій',     ink: '#2f6fdb' },
+  { key: 'rocket',   emoji: '🟢', label: 'Ракета',     ink: '#1f9d55' },
+  { key: 'word',     emoji: '🟡', label: 'Моє слово',  ink: '#c99400' },
+  { key: 'strong',   emoji: '🟠', label: 'Незламний',  ink: '#e8650c' },
+  { key: 'inventor', emoji: '💡', label: 'Винахідник', ink: '#8b3fd9' }
 ];
 
 /* Чекліст (лише на пульті) */

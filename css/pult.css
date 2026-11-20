@@ -152,9 +152,33 @@ button, input, textarea { font: inherit; color: inherit; }
 .pick .lbl { font-size: 10.5px; line-height: 1.1; text-align: center; letter-spacing: -.1px; max-width: 100%; }
 .colors .pick, .pets .pick { padding-left: 1px; padding-right: 1px; }
 .kid-editor textarea { width: 100%; border: 2px solid var(--line); border-radius: 12px; padding: 8px 10px; resize: vertical; font-size: 16px; }
-.stamp-picks { display: flex; flex-wrap: wrap; gap: 6px; }
-.stamp-pick { border: 2px solid var(--line); background: #fff; border-radius: 20px; padding: 6px 12px; cursor: pointer; font-weight: 800; font-size: 14px; }
-.stamp-pick.on { border-color: var(--ink); color: var(--ink); background: color-mix(in srgb, var(--ink) 12%, white); }
+/* ---------- паспорти: таблиця печаток ---------- */
+.card h2 small { font: 700 12px var(--font-main); color: var(--muted); margin-left: 4px; }
+.passports .empty { color: var(--muted); font-size: 14px; }
+.pp-table { display: flex; flex-direction: column; gap: 3px; }
+.pp-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(5, 56px); gap: 4px; align-items: center; border-radius: 10px; padding: 1px 2px; }
+.pp-row.live { background: var(--sel-bg); }
+.pp-head { align-items: end; padding-bottom: 4px; border-bottom: 2px solid var(--line); margin-bottom: 2px; }
+.pp-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.pp-e { font-size: 18px; line-height: 1; }
+.pp-l { font-size: 9.5px; font-weight: 800; color: var(--ink); white-space: nowrap; letter-spacing: -.1px; }
+.pp-all { border: 1.5px solid var(--ink); background: #fff; color: var(--ink); border-radius: 8px; font-size: 11px; font-weight: 900; padding: 2px 0; width: 100%; cursor: pointer; }
+.pp-all:hover { background: color-mix(in srgb, var(--ink) 12%, white); }
+.pp-all:disabled { border-color: var(--line); color: var(--muted); cursor: default; background: #fff; }
+.pp-kid { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pp-mini { width: 22px; height: 30px; flex: none; }
+.pp-mini svg { width: 100%; height: 100%; }
+.pp-name { font-size: 14px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-cell {
+  height: 30px; border-radius: 9px; border: 2px solid #e4e1ee; background: #f1f0f5; cursor: pointer;
+  font-size: 15px; line-height: 1; filter: grayscale(1); opacity: .55; transition: background .15s;
+}
+.pp-cell:hover { opacity: .85; border-color: #c9c4dc; }
+.pp-cell.on { filter: none; opacity: 1; background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 900; font-size: 17px; }
+
+/* анімація штампа на пульті */
+.stamped { animation: stamp-press .45s cubic-bezier(.3, 1.5, .5, 1); }
+@keyframes stamp-press { 0% { transform: scale(1.7) rotate(-14deg); } 60% { transform: scale(.9) rotate(3deg); } 100% { transform: none; } }
 .ed-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .ed-actions .btn-inline { padding: 12px 18px; font-size: 16px; }
 
@@ -219,8 +243,21 @@ button, input, textarea { font: inherit; color: inherit; }
 .q-btn { border: 2px solid var(--line); background: #fff; border-radius: 12px; padding: 7px 10px; cursor: pointer; text-align: left; font-size: 14px; font-weight: 700; }
 .q-btn:hover { border-color: var(--violet); }
 .react-card { flex: none; }
-.stamp-btn { background: #fff; border-color: var(--line); }
-.stamp-btn.on { background: color-mix(in srgb, var(--ink) 15%, white); border-color: var(--ink); color: var(--ink); }
+/* рядок печаток поточної дитини */
+.p-stamps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.7fr); gap: 6px; margin-top: 8px; }
+.pstamp {
+  position: relative; min-height: 62px; border-radius: 14px; border: 2px solid #e4e1ee; background: #f4f3f8; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px 2px; color: var(--muted);
+}
+.pstamp .e { font-size: 20px; line-height: 1; filter: grayscale(1); opacity: .6; }
+.pstamp .l { font-size: 10.5px; font-weight: 800; line-height: 1.05; text-align: center; }
+.pstamp.main .e { font-size: 30px; }
+.pstamp.main .l { font-size: 14px; }
+.pstamp .ok { position: absolute; top: 3px; right: 5px; font-size: 13px; font-weight: 900; }
+.pstamp:hover { border-color: #c9c4dc; }
+.pstamp.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.pstamp.on .e { filter: none; opacity: 1; }
+.pstamp:disabled { opacity: .45; cursor: not-allowed; }
 
 .check-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .check-card h3 { margin: 0 0 8px; font: 800 17px var(--font-title); }
